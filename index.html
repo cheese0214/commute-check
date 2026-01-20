@@ -280,7 +280,8 @@
 
                 if (success) {
                     if (radarOverlay) map.removeLayer(radarOverlay);
-                    radarOverlay = L.imageOverlay(radarUrl, RADAR_BOUNDS, { opacity: 0.75, className: 'radar-layer' }).addTo(map);
+                    // Set opacity to 0.5 as requested for better visibility of the map underneath
+                    radarOverlay = L.imageOverlay(radarUrl, RADAR_BOUNDS, { opacity: 0.5, className: 'radar-layer' }).addTo(map);
                     
                     const timeStr = checkTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
                     timeBanner.innerText = timeStr;
