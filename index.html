@@ -24,7 +24,7 @@
             --safe-bottom: env(safe-area-inset-bottom, 0px);
         }
 
-        #map { height: calc(100vh - 110px - var(--safe-top)); width: 100%; background-color: #020617; }
+        #map { height: 100vh; width: 100%; background-color: #020617; }
         
         * {
             -webkit-tap-highlight-color: transparent;
@@ -64,12 +64,6 @@
 
         .traffic-layer { filter: saturate(1.8) contrast(1.2) brightness(0.8); z-index: 10; }
         
-        @keyframes pulse-alert {
-            0%, 100% { background-color: #450a0a; }
-            50% { background-color: #7f1d1d; }
-        }
-        .rain-alert-active { animation: pulse-alert 2s infinite; }
-        
         @keyframes cam-pulse {
             0% { transform: scale(1); opacity: 1; }
             50% { transform: scale(1.5); opacity: 0.7; }
@@ -81,29 +75,11 @@
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col overflow-hidden">
 
-    <div id="status-card" class="bg-slate-900 border-b border-slate-800 shadow-xl z-20 transition-all duration-500" style="padding-top: calc(1rem + var(--safe-top)); padding-left: 1rem; padding-right: 1rem; padding-bottom: 1rem;">
-        <div class="max-w-md mx-auto flex items-center gap-4">
-            <div id="status-icon" class="text-3xl w-10 flex justify-center text-emerald-400">
-                <i class="fas fa-motorcycle"></i>
-            </div>
-            <div class="flex-grow flex items-center justify-between gap-4">
-                <div>
-                    <h1 class="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-0.5">Commute Weather</h1>
-                    <h2 id="status-text" class="text-lg font-black text-white leading-tight">Checking Route...</h2>
-                    <p id="status-sub" class="text-slate-400 text-[10px]">Home ↔ Office path scan</p>
-                </div>
-                <div id="radar-time-banner" class="text-[9px] font-black text-slate-400 bg-slate-800 px-2 py-1.5 rounded border border-slate-700 whitespace-nowrap self-center">
-                    RADAR: --
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="relative flex-grow">
+    <div class="relative flex-grow h-full">
         <div id="map"></div>
         
         <!-- Controls: Compact Icon-only Grid -->
-        <div class="absolute top-4 right-4 z-[500] flex flex-col gap-3">
+        <div class="absolute top-4 right-4 z-[500] flex flex-col gap-3" style="padding-top: var(--safe-top);">
             <button onclick="locateUser()" id="locate-btn" class="bg-slate-800/90 backdrop-blur text-white w-12 h-12 flex items-center justify-center rounded-xl shadow-2xl btn-active border border-white/10" title="Locate Me">
                 <i class="fas fa-location-arrow"></i>
             </button>
@@ -116,11 +92,17 @@
             <button onclick="toggleCameras()" id="cam-btn" class="bg-slate-800/90 backdrop-blur text-slate-300 w-12 h-12 flex items-center justify-center rounded-xl shadow-2xl btn-active border border-white/10" title="Speed Cameras">
                 <i class="fas fa-camera"></i>
             </button>
+            <button onclick="manualRefresh()" id="refresh-btn" class="bg-slate-800/90 backdrop-blur text-white w-12 h-12 flex items-center justify-center rounded-xl shadow-2xl btn-active border border-white/10" title="Refresh">
+                <i class="fas fa-sync-alt"></i>
+            </button>
         </div>
 
-        <!-- Legend: Adjusted for Home Bar -->
-        <div class="absolute left-4 bg-slate-950/90 p-4 rounded-2xl border border-white/10 text-[10px] shadow-2xl z-[500] backdrop-blur-md" style="bottom: calc(1.5rem + var(--safe-bottom));">
-            <div class="font-black mb-3 text-slate-400 uppercase tracking-widest border-b border-white/5 pb-1 text-[8px]">Rain Intensity</div>
+        <!-- Legend -->
+        <div class="absolute left-4 bg-slate-950/90 p-4 rounded-2xl border border-white/10 text-[10px] shadow-2xl z-[500] backdrop-blur-md" style="bottom: calc(1.5rem + var(--safe-bottom)); min-width: 140px;">
+            <div class="flex justify-between items-center mb-3 border-b border-white/5 pb-1">
+                <div class="font-black text-slate-400 uppercase tracking-widest text-[8px]">Rain Intensity</div>
+                <div id="radar-time-banner" class="font-black text-emerald-400 text-[8px]">--:--</div>
+            </div>
             <div class="grid grid-cols-2 gap-x-6 gap-y-2">
                 <div class="flex items-center gap-2">
                     <div class="w-3.5 h-3.5 rounded-md" style="background:#00FD00"></div> <span>Light</span>
@@ -148,14 +130,14 @@
         const RADAR_BOUNDS = [[1.16, 103.58], [1.47, 104.10]];
         const CAM_DATA_ID = "d_983804de2bc016f53e44031d85d1ec8a";
 
-        let map, radarOverlay, trafficLayer, camLayer, radarImage, userLocationMarker, routePolyline;
+        let map, radarOverlay, trafficLayer, camLayer, userLocationMarker, routePolyline;
         let isTrafficOn = false, isCamsOn = false, isWholeSGView = false;
 
         document.addEventListener('DOMContentLoaded', () => {
             initMap();
             fetchRoute().then(() => fetchSpeedCameras());
             updateRadar();
-            setInterval(updateRadar, 150000); 
+            setInterval(updateRadar, 60000); // Check every minute
         });
 
         function initMap() {
@@ -229,6 +211,10 @@
             } catch (e) { console.error("Camera data failed", e); }
         }
 
+        function manualRefresh() {
+            location.reload();
+        }
+
         function locateUser() {
             if (!navigator.geolocation) return;
             const btn = document.getElementById('locate-btn');
@@ -264,29 +250,48 @@
             }
         }
 
+        /**
+         * Fetches radar data and validates availability.
+         * Shows timestamp only if data is successfully fetched.
+         */
         async function updateRadar() {
+            const timeBanner = document.getElementById('radar-time-banner');
+            
+            // Try to find the most recent 5-minute interval data
             const now = new Date();
-            const rounded = new Date(Math.floor(now.getTime() / 300000) * 300000);
-            const ts = rounded.getFullYear() + String(rounded.getMonth() + 1).padStart(2, '0') + String(rounded.getDate()).padStart(2, '0') + String(rounded.getHours()).padStart(2, '0') + String(rounded.getMinutes()).padStart(2, '0');
-            const radarUrl = `https://www.weather.gov.sg/files/rainarea/50km/v2/dpsri_70km_${ts}0000dBR.dpsri.png`;
+            // Start checking from current interval and go back up to 3 intervals (15 mins) if needed
+            for (let offset = 0; offset < 3; offset++) {
+                const checkTime = new Date(Math.floor((now.getTime() - (offset * 300000)) / 300000) * 300000);
+                const ts = checkTime.getFullYear() + 
+                           String(checkTime.getMonth() + 1).padStart(2, '0') + 
+                           String(checkTime.getDate()).padStart(2, '0') + 
+                           String(checkTime.getHours()).padStart(2, '0') + 
+                           String(checkTime.getMinutes()).padStart(2, '0');
+                
+                const radarUrl = `https://www.weather.gov.sg/files/rainarea/50km/v2/dpsri_70km_${ts}0000dBR.dpsri.png`;
 
-            if (radarOverlay) map.removeLayer(radarOverlay);
-            radarOverlay = L.imageOverlay(radarUrl, RADAR_BOUNDS, { opacity: 0.75, className: 'radar-layer' })
-                .on('load', () => setUIStatus('success', 'CLEAR FOR COMMUTE', 'No heavy rain detected on your specific route.'))
-                .addTo(map);
+                // Use a temporary image object to check if the file exists
+                const success = await new Promise((resolve) => {
+                    const img = new Image();
+                    img.onload = () => resolve(true);
+                    img.onerror = () => resolve(false);
+                    img.src = radarUrl;
+                });
 
-            const timeStr = rounded.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-            document.getElementById('radar-time-banner').innerText = `RADAR: ${timeStr}`;
-        }
+                if (success) {
+                    if (radarOverlay) map.removeLayer(radarOverlay);
+                    radarOverlay = L.imageOverlay(radarUrl, RADAR_BOUNDS, { opacity: 0.75, className: 'radar-layer' }).addTo(map);
+                    
+                    const timeStr = checkTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+                    timeBanner.innerText = timeStr;
+                    timeBanner.classList.replace('text-red-500', 'text-emerald-400');
+                    return; // Stop once we find the latest valid data
+                }
+            }
 
-        function setUIStatus(type, title, sub) {
-            const card = document.getElementById('status-card');
-            const icon = document.getElementById('status-icon');
-            document.getElementById('status-text').innerText = title;
-            document.getElementById('status-sub').innerText = sub;
-            card.classList.remove('rain-alert-active');
-            if (type === 'success') { icon.innerHTML = '<i class="fas fa-motorcycle text-emerald-400"></i>'; } 
-            else { card.classList.add('rain-alert-active'); icon.innerHTML = '<i class="fas fa-cloud-showers-heavy text-white"></i>'; }
+            // If all checks fail
+            timeBanner.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+            timeBanner.classList.replace('text-emerald-400', 'text-red-500');
         }
 
         function toggleTraffic() {
